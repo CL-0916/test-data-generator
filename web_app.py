@@ -101,8 +101,6 @@ def generate_and_display(schema, api_key, model, temperature, scenarios, count, 
             )
 
         except Exception as e:
-            sys.stderr.write(f"❌ 生成失败: {str(e)}")
-            sys.stderr.flush()
             st.error(f"❌ 生成失败: {str(e)}")
             with st.expander("技术详情（用于调试）"):
                 st.code(traceback.format_exc())
