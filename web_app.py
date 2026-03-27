@@ -32,7 +32,7 @@ with st.sidebar:
         help="deepseek-chat: 速度快，成本低；deepseek-reasoner: 推理更强，稍慢"
     )
 
-    temperature = st.slider("创意度 (temperature)", 0.0, 1.0, 0.7, 0.1)
+    temperature = st.slider("创意度 (temperature)", 0.0, 1.0, 1.0, 0.1)
 
     st.divider()
 
