@@ -1,0 +1,16 @@
+# DeepSeek API 配置
+deepseek:
+  api_base: "https://api.deepseek.com"
+  default_model: "deepseek-chat"
+  temperature: 0.7
+  max_tokens: 4000
+
+# 默认生成配置
+default:
+  count: 10
+  scenarios: ["positive", "boundary", "negative"]
+  export_format: "json"
+
+# 输出路径
+output:
+  dir: "./output"
