@@ -1,12 +1,21 @@
-import sys
-
 import streamlit as st
 import json
 import os
 import traceback
+import logging
+import sys
 from generator import TestDataGenerator
 
-# 页面配置
+# ==================== 配置日志（输出到 stderr，供 Streamlit Cloud 捕获）====================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    stream=sys.stderr,
+    force=True  # Python 3.8+ 确保覆盖已有配置
+)
+logger = logging.getLogger(__name__)
+
+# ==================== Streamlit 页面配置 ====================
 st.set_page_config(
     page_title="智能测试数据生成器 - DeepSeek",
     page_icon="🧪",
@@ -16,7 +25,7 @@ st.set_page_config(
 st.title("🧪 智能测试数据生成器")
 st.markdown("基于 DeepSeek API，根据接口定义自动生成测试数据（正向/边界/异常）")
 
-# 侧边栏配置
+# ==================== 侧边栏配置 ====================
 with st.sidebar:
     st.header("⚙️ 配置")
 
@@ -32,7 +41,7 @@ with st.sidebar:
         help="deepseek-chat: 速度快，成本低；deepseek-reasoner: 推理更强，稍慢"
     )
 
-    temperature = st.slider("创意度 (temperature)", 0.0, 1.0, 1.0, 0.1)
+    temperature = st.slider("创意度 (temperature)", 0.0, 1.0, 0.7, 0.1)
 
     st.divider()
 
@@ -55,15 +64,17 @@ with st.sidebar:
     st.markdown("---")
     st.caption("💡 提示：API Key 仅在当前会话中使用，不会保存。")
 
-# 主区域
+# ==================== 主区域 ====================
 tab1, tab2, tab3 = st.tabs(["📄 直接输入 Schema", "📂 上传 JSON 文件", "🔗 Swagger 文档"])
 
 def generate_and_display(schema, api_key, model, temperature, scenarios, count, export_format):
-    """生成并显示测试数据"""
+    """生成并显示测试数据，同时记录日志"""
     if not api_key:
         st.error("❌ 请先在侧边栏输入 DeepSeek API Key")
+        logger.warning("用户尝试生成但未提供 API Key")
         return
 
+    logger.info(f"用户开始生成数据: 场景={scenarios}, 数量={count}, 模型={model}, temperature={temperature}")
     with st.spinner("DeepSeek 正在生成测试数据..."):
         try:
             generator = TestDataGenerator(
@@ -75,13 +86,15 @@ def generate_and_display(schema, api_key, model, temperature, scenarios, count, 
 
             if not test_data:
                 st.warning("未生成任何数据，请检查输入或稍后重试")
+                logger.warning("生成结果为空")
                 return
 
             st.success(f"✅ 成功生成 {len(test_data)} 组测试数据")
+            logger.info(f"生成成功，共 {len(test_data)} 组数据")
 
             # 显示预览
             st.subheader("📊 数据预览")
-            for idx, item in enumerate(test_data[:5]):  # 只显示前5条
+            for idx, item in enumerate(test_data[:5]):
                 with st.expander(f"{idx+1}. [{item['scenario']}] {item['description']}"):
                     st.json(item['data'])
             if len(test_data) > 5:
@@ -99,8 +112,10 @@ def generate_and_display(schema, api_key, model, temperature, scenarios, count, 
                 mime="text/plain",
                 use_container_width=True
             )
+            logger.debug("导出文件已生成")
 
         except Exception as e:
+            logger.error(f"生成失败: {e}", exc_info=True)
             st.error(f"❌ 生成失败: {str(e)}")
             with st.expander("技术详情（用于调试）"):
                 st.code(traceback.format_exc())
@@ -116,12 +131,14 @@ with tab1:
     if st.button("🚀 生成测试数据", type="primary", use_container_width=True):
         if not schema_input.strip():
             st.error("❌ 请输入 API Schema")
+            logger.warning("用户尝试生成但未提供 Schema")
         else:
             try:
                 schema = json.loads(schema_input)
                 generate_and_display(schema, api_key, model, temperature, scenarios, count, export_format)
             except json.JSONDecodeError:
                 st.error("❌ 输入的 Schema 不是有效的 JSON 格式")
+                logger.warning("用户输入的 Schema 解析失败")
 
 # Tab 2: 上传文件
 with tab2:
@@ -142,6 +159,7 @@ with tab2:
                 generate_and_display(schema, api_key, model, temperature, scenarios, count, export_format)
         except json.JSONDecodeError:
             st.error("❌ 上传的文件不是有效的 JSON 格式")
+            logger.warning("上传的文件 JSON 解析失败")
 
 # Tab 3: Swagger 文档
 with tab3:
@@ -154,8 +172,10 @@ with tab3:
     if st.button("🚀 批量生成", type="primary", use_container_width=True):
         if not api_key:
             st.error("❌ 请先在侧边栏输入 DeepSeek API Key")
+            logger.warning("用户尝试批量生成但未提供 API Key")
         elif not swagger_url:
             st.error("❌ 请输入 Swagger URL")
+            logger.warning("用户尝试批量生成但未提供 URL")
         else:
             with st.spinner("正在处理 Swagger 文档..."):
                 try:
@@ -194,8 +214,10 @@ with tab3:
                         mime="application/zip",
                         use_container_width=True
                     )
+                    logger.info(f"批量处理完成，共 {len(results)} 个接口")
 
                 except Exception as e:
+                    logger.error(f"批量处理失败: {e}", exc_info=True)
                     st.error(f"❌ 处理失败: {str(e)}")
                     with st.expander("技术详情（用于调试）"):
                         st.code(traceback.format_exc())

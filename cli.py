@@ -1,8 +1,13 @@
 import click
 import json
 import traceback
+import logging
 from pathlib import Path
 from generator import TestDataGenerator
+
+# 配置日志（命令行使用）
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 @click.group()
 def cli():
@@ -23,7 +28,7 @@ def cli():
               help='DeepSeek API Key (也可通过环境变量 DEEPSEEK_API_KEY 设置)')
 @click.option('--model', '-m', default='deepseek-chat',
               help='模型名称 (deepseek-chat 或 deepseek-reasoner)')
-@click.option('--temperature', '-t', default=1.0,
+@click.option('--temperature', '-t', default=0.7,
               help='生成温度 (0-1)')
 @click.option('--scenarios',
               help='场景列表，逗号分隔 (如 positive,boundary,negative)')
@@ -38,6 +43,7 @@ def generate(schema, count, output, format, api_key, model, temperature, scenari
             api_schema = json.loads(schema)
     except Exception as e:
         click.echo(f"❌ 无法解析 schema: {e}")
+        logger.error(f"Schema 解析失败: {e}")
         return
 
     # 解析场景列表
@@ -47,6 +53,7 @@ def generate(schema, count, output, format, api_key, model, temperature, scenari
         scenarios_list = None
 
     click.echo(f"🚀 正在使用 DeepSeek ({model}) 生成测试数据...")
+    logger.info(f"开始生成，场景: {scenarios_list}, 数量: {count}")
 
     try:
         generator = TestDataGenerator(
@@ -65,6 +72,7 @@ def generate(schema, count, output, format, api_key, model, temperature, scenari
         output_path.write_text(content, encoding='utf-8')
 
         click.echo(f"✅ 成功生成 {len(test_data)} 组数据，已保存至: {output}")
+        logger.info(f"生成成功，共 {len(test_data)} 组数据")
 
         # 打印预览
         click.echo("\n📊 预览 (前3条):")
@@ -72,6 +80,7 @@ def generate(schema, count, output, format, api_key, model, temperature, scenari
             click.echo(f"  [{item['scenario']}] {item['description']}")
 
     except Exception as e:
+        logger.error(f"生成失败: {e}", exc_info=True)
         click.echo(f"❌ 生成失败: {str(e)}")
         if click.confirm("是否显示详细错误信息？", default=False):
             click.echo(traceback.format_exc())
@@ -91,6 +100,7 @@ def batch(swagger_url, output_dir, api_key, model):
     output_path.mkdir(parents=True, exist_ok=True)
 
     click.echo(f"🚀 开始处理 Swagger 文档: {swagger_url}")
+    logger.info(f"开始批量处理 Swagger: {swagger_url}")
 
     generator = TestDataGenerator(api_key=api_key, model=model)
     try:
@@ -107,8 +117,10 @@ def batch(swagger_url, output_dir, api_key, model):
             click.echo(f"✅ 已生成: {filename}")
 
         click.echo(f"\n🎉 完成！共处理 {len(results)} 个接口，数据保存在 {output_dir}")
+        logger.info(f"批量处理完成，共 {len(results)} 个接口")
 
     except Exception as e:
+        logger.error(f"批量处理失败: {e}", exc_info=True)
         click.echo(f"❌ 处理失败: {str(e)}")
         if click.confirm("是否显示详细错误信息？", default=False):
             click.echo(traceback.format_exc())

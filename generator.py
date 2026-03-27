@@ -1,9 +1,12 @@
 import json
-import sys
-import os
+import re
 import requests
 import time
+import logging
 from typing import Dict, List, Any, Optional
+
+# 配置日志（如果未配置，则使用默认）
+logger = logging.getLogger(__name__)
 
 class TestDataGenerator:
     """使用 DeepSeek API（requests 版）的测试数据生成器"""
@@ -11,7 +14,7 @@ class TestDataGenerator:
     def __init__(self,
                  api_key: Optional[str] = None,
                  model: str = "deepseek-chat",
-                 temperature: float = 1.0,
+                 temperature: float = 0.7,
                  max_tokens: int = 4000):
         """
         初始化生成器
@@ -22,6 +25,7 @@ class TestDataGenerator:
             temperature: 生成温度，0-1之间
             max_tokens: 最大输出 token 数
         """
+        import os
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
         if not self.api_key:
             raise ValueError("请提供 DeepSeek API Key 或设置环境变量 DEEPSEEK_API_KEY")
@@ -30,6 +34,7 @@ class TestDataGenerator:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.api_url = "https://api.deepseek.com/v1/chat/completions"
+        logger.info(f"生成器初始化: model={model}, temperature={temperature}")
 
     def _build_prompt(self, api_schema: Dict, count: int = 10,
                       scenarios: List[str] = None) -> str:
@@ -81,14 +86,14 @@ API定义（JSON）：
                             # 继续寻找下一个
                             start = None
                             continue
-        # # 方法2：使用正则（备选，适用于简单情况）
-        # match = re.search(r'\{[^{}]*\}', text)
-        # if match:
-        #     try:
-        #         return json.loads(match.group())
-        #     except json.JSONDecodeError:
-        #         pass
-        # raise ValueError("无法从返回内容中提取有效的 JSON")
+        # 方法2：使用正则（备选，适用于简单情况）
+        match = re.search(r'\{[^{}]*\}', text)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+        raise ValueError("无法从返回内容中提取有效的 JSON")
 
     def _call_deepseek_api(self, prompt: str) -> str:
         """调用 DeepSeek API 并返回响应内容，支持超时重试"""
@@ -113,26 +118,26 @@ API定义（JSON）：
 
         for attempt in range(max_retries):
             try:
-                print(f"[DEBUG] 正在调用 DeepSeek API，第 {attempt+1} 次尝试...")
+                logger.debug(f"正在调用 DeepSeek API，第 {attempt+1} 次尝试...")
                 response = requests.post(
                     self.api_url,
                     headers=headers,
                     json=payload,
                     timeout=timeout_seconds
                 )
-                print(f"[DEBUG] 状态码: {response.status_code}")
+                logger.debug(f"状态码: {response.status_code}")
                 if response.status_code != 200:
-                    print(f"[DEBUG] 错误响应内容: {response.text[:300]}")
+                    logger.debug(f"错误响应内容: {response.text[:300]}")
                 response.raise_for_status()
                 result = response.json()
                 content = result["choices"][0]["message"]["content"]
-                print(f"[DEBUG] 返回内容长度: {len(content)}")
+                logger.debug(f"返回内容长度: {len(content)}")
                 return content
 
             except requests.exceptions.Timeout:
-                print(f"[WARN] 请求超时 (第 {attempt+1} 次)")
+                logger.warning(f"请求超时 (第 {attempt+1} 次)")
                 if attempt < max_retries - 1:
-                    print(f"[INFO] 等待 {retry_delay} 秒后重试...")
+                    logger.info(f"等待 {retry_delay} 秒后重试...")
                     time.sleep(retry_delay)
                     retry_delay *= 2
                 else:
@@ -157,21 +162,19 @@ API定义（JSON）：
         Returns:
             测试数据列表，每个元素包含 scenario, data, description
         """
-        sys.stderr.write(f"[DEBUG] 构建提示词...")
-        sys.stderr.flush()
+        logger.info(f"开始生成测试数据，场景: {scenarios}, 数量: {count}")
         prompt = self._build_prompt(api_schema, count, scenarios)
         content = self._call_deepseek_api(prompt)
 
-        # 打印前500字符便于调试
-        print(f"[DEBUG] API 返回原始内容（前500字符）: {content[:500]}")
+        logger.debug(f"API 返回原始内容（前500字符）: {content[:500]}")
 
         try:
             result = self._extract_json(content)
-            return result.get("test_data", [])
+            test_data = result.get("test_data", [])
+            logger.info(f"成功生成 {len(test_data)} 组测试数据")
+            return test_data
         except Exception as e:
-            # 抛出更详细的错误，包含原始内容片段
-            sys.stderr.write(f"JSON解析失败: {str(e)}。原始返回内容: {content[:300]}")
-            # sys.stderr.flush()
+            logger.error(f"JSON解析失败: {e}, 原始内容: {content[:300]}")
             raise Exception(f"JSON解析失败: {str(e)}。原始返回内容: {content[:300]}")
 
     def generate_for_swagger(self, swagger_url: str, count: int = 10) -> Dict[str, List]:
@@ -185,6 +188,7 @@ API定义（JSON）：
         Returns:
             字典，键为 "METHOD path"，值为测试数据列表
         """
+        logger.info(f"开始处理 Swagger 文档: {swagger_url}")
         resp = requests.get(swagger_url)
         resp.raise_for_status()
         swagger = resp.json()
@@ -203,8 +207,11 @@ API定义（JSON）：
                     try:
                         test_data = self.generate(schema, count)
                         results[f"{method.upper()} {path}"] = test_data
+                        logger.debug(f"接口 {method.upper()} {path} 生成成功")
                     except Exception as e:
                         results[f"{method.upper()} {path}"] = {"error": str(e)}
+                        logger.error(f"接口 {method.upper()} {path} 生成失败: {e}")
+        logger.info(f"Swagger 处理完成，共 {len(results)} 个接口")
         return results
 
     def export_formats(self, test_data: List[Dict], format: str = "json") -> str:
@@ -218,6 +225,7 @@ API定义（JSON）：
         Returns:
             格式化后的字符串
         """
+        logger.debug(f"导出格式: {format}")
         if format == "json":
             return json.dumps(test_data, indent=2, ensure_ascii=False)
 
