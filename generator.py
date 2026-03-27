@@ -168,6 +168,7 @@ API定义（JSON）：
             return result.get("test_data", [])
         except Exception as e:
             # 抛出更详细的错误，包含原始内容片段
+            print(f"JSON解析失败: {str(e)}。原始返回内容: {content[:300]}")
             raise Exception(f"JSON解析失败: {str(e)}。原始返回内容: {content[:300]}")
 
     def generate_for_swagger(self, swagger_url: str, count: int = 10) -> Dict[str, List]:
