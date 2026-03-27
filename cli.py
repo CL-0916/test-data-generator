@@ -23,7 +23,7 @@ def cli():
               help='DeepSeek API Key (也可通过环境变量 DEEPSEEK_API_KEY 设置)')
 @click.option('--model', '-m', default='deepseek-chat',
               help='模型名称 (deepseek-chat 或 deepseek-reasoner)')
-@click.option('--temperature', '-t', default=0.7,
+@click.option('--temperature', '-t', default=1.0,
               help='生成温度 (0-1)')
 @click.option('--scenarios',
               help='场景列表，逗号分隔 (如 positive,boundary,negative)')
