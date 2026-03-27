@@ -2,7 +2,7 @@
 deepseek:
   api_base: "https://api.deepseek.com"
   default_model: "deepseek-chat"
-  temperature: 0.7
+  temperature: 1.0
   max_tokens: 4000
 
 # 默认生成配置
