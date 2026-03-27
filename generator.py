@@ -157,6 +157,7 @@ API定义（JSON）：
         Returns:
             测试数据列表，每个元素包含 scenario, data, description
         """
+        dsfdfgr
         prompt = self._build_prompt(api_schema, count, scenarios)
         content = self._call_deepseek_api(prompt)
 
@@ -165,7 +166,6 @@ API定义（JSON）：
 
         try:
             result = self._extract_json(content)
-            dsfdfgr
             return result.get("test_data", [])
         except Exception as e:
             # 抛出更详细的错误，包含原始内容片段
