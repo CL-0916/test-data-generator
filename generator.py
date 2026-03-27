@@ -1,5 +1,5 @@
 import json
-import re
+import os
 import requests
 import time
 from typing import Dict, List, Any, Optional
@@ -10,7 +10,7 @@ class TestDataGenerator:
     def __init__(self,
                  api_key: Optional[str] = None,
                  model: str = "deepseek-chat",
-                 temperature: float = 0.7,
+                 temperature: float = 1.0,
                  max_tokens: int = 4000):
         """
         初始化生成器
@@ -80,14 +80,14 @@ API定义（JSON）：
                             # 继续寻找下一个
                             start = None
                             continue
-        # 方法2：使用正则（备选，适用于简单情况）
-        match = re.search(r'\{[^{}]*\}', text)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
-        raise ValueError("无法从返回内容中提取有效的 JSON")
+        # # 方法2：使用正则（备选，适用于简单情况）
+        # match = re.search(r'\{[^{}]*\}', text)
+        # if match:
+        #     try:
+        #         return json.loads(match.group())
+        #     except json.JSONDecodeError:
+        #         pass
+        # raise ValueError("无法从返回内容中提取有效的 JSON")
 
     def _call_deepseek_api(self, prompt: str) -> str:
         """调用 DeepSeek API 并返回响应内容，支持超时重试"""
