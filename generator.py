@@ -157,7 +157,8 @@ API定义（JSON）：
         Returns:
             测试数据列表，每个元素包含 scenario, data, description
         """
-        dsfdfgr
+        sys.stderr.write(f"[DEBUG] 构建提示词...")
+        sys.stderr.flush()
         prompt = self._build_prompt(api_schema, count, scenarios)
         content = self._call_deepseek_api(prompt)
 
