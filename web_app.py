@@ -1,5 +1,7 @@
 import streamlit as st
 import json
+import os
+import traceback
 from generator import TestDataGenerator
 
 # 页面配置
@@ -54,7 +56,6 @@ with st.sidebar:
 # 主区域
 tab1, tab2, tab3 = st.tabs(["📄 直接输入 Schema", "📂 上传 JSON 文件", "🔗 Swagger 文档"])
 
-
 def generate_and_display(schema, api_key, model, temperature, scenarios, count, export_format):
     """生成并显示测试数据"""
     if not api_key:
@@ -79,10 +80,10 @@ def generate_and_display(schema, api_key, model, temperature, scenarios, count, 
             # 显示预览
             st.subheader("📊 数据预览")
             for idx, item in enumerate(test_data[:5]):  # 只显示前5条
-                with st.expander(f"{idx + 1}. [{item['scenario']}] {item['description']}"):
+                with st.expander(f"{idx+1}. [{item['scenario']}] {item['description']}"):
                     st.json(item['data'])
             if len(test_data) > 5:
-                st.info(f"还有 {len(test_data) - 5} 组数据未显示，请下载查看全部")
+                st.info(f"还有 {len(test_data)-5} 组数据未显示，请下载查看全部")
 
             # 导出
             content = generator.export_formats(test_data, export_format)
@@ -99,7 +100,8 @@ def generate_and_display(schema, api_key, model, temperature, scenarios, count, 
 
         except Exception as e:
             st.error(f"❌ 生成失败: {str(e)}")
-
+            with st.expander("技术详情（用于调试）"):
+                st.code(traceback.format_exc())
 
 # Tab 1: 直接输入
 with tab1:
@@ -172,12 +174,11 @@ with tab3:
                             else:
                                 st.json(data)
                     if len(results) > 5:
-                        st.info(f"还有 {len(results) - 5} 个接口未显示")
+                        st.info(f"还有 {len(results)-5} 个接口未显示")
 
                     # 批量导出为 zip
                     import zipfile
                     import io
-
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                         for api_name, data in results.items():
@@ -194,6 +195,8 @@ with tab3:
 
                 except Exception as e:
                     st.error(f"❌ 处理失败: {str(e)}")
+                    with st.expander("技术详情（用于调试）"):
+                        st.code(traceback.format_exc())
 
 # 页脚
 st.markdown("---")

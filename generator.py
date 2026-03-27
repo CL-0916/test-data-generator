@@ -1,9 +1,8 @@
 import json
 import re
-import os
 import requests
+import time
 from typing import Dict, List, Any, Optional
-
 
 class TestDataGenerator:
     """使用 DeepSeek API（requests 版）的测试数据生成器"""
@@ -22,7 +21,6 @@ class TestDataGenerator:
             temperature: 生成温度，0-1之间
             max_tokens: 最大输出 token 数
         """
-        # 获取 API Key
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
         if not self.api_key:
             raise ValueError("请提供 DeepSeek API Key 或设置环境变量 DEEPSEEK_API_KEY")
@@ -38,33 +36,61 @@ class TestDataGenerator:
         if scenarios is None:
             scenarios = ["positive", "boundary", "negative"]
 
-        prompt = f"""根据以下API接口定义，生成{count}组测试数据。
-
-接口定义（JSON）：
+        prompt = f"""你是一个测试数据生成专家。请根据以下API定义，生成测试数据。
+API定义（JSON）：
 {json.dumps(api_schema, indent=2, ensure_ascii=False)}
 
 要求：
-1. 需要包含以下场景的数据：{', '.join(scenarios)}
-2. 每个场景至少生成{count}组数据
-3. 返回格式必须是JSON，结构如下：
+1. 生成{count}组测试数据，场景包括：{', '.join(scenarios)}。
+2. **只返回一个 JSON 对象，不要包含任何解释、注释或额外文字。**
+3. JSON 结构必须为：
 {{
   "test_data": [
-    {{
-      "scenario": "positive",
-      "data": {{"field1": "value1", "field2": "value2"}},
-      "description": "场景描述"
-    }}
+    {{"scenario": "positive", "data": {{...}}, "description": "..."}}
   ]
 }}
-4. 数据要真实、合理，符合业务逻辑
-5. 如果字段有特殊约束（如邮箱、手机号），请遵守约束
-6. 直接返回JSON，不要有其他说明文字
-
-请生成："""
+请直接输出 JSON："""
         return prompt
 
+    @staticmethod
+    def _extract_json(text: str) -> dict:
+        """从文本中提取第一个完整的 JSON 对象（支持嵌套）"""
+        # 先尝试直接解析整个文本
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 方法1：找到第一个 '{' 和与之匹配的 '}'
+        stack = []
+        start = None
+        for i, ch in enumerate(text):
+            if ch == '{':
+                if not stack:
+                    start = i
+                stack.append(ch)
+            elif ch == '}':
+                if stack:
+                    stack.pop()
+                    if not stack:
+                        json_str = text[start:i+1]
+                        try:
+                            return json.loads(json_str)
+                        except json.JSONDecodeError:
+                            # 继续寻找下一个
+                            start = None
+                            continue
+        # 方法2：使用正则（备选，适用于简单情况）
+        match = re.search(r'\{[^{}]*\}', text)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+        raise ValueError("无法从返回内容中提取有效的 JSON")
+
     def _call_deepseek_api(self, prompt: str) -> str:
-        """调用 DeepSeek API 并返回响应内容"""
+        """调用 DeepSeek API 并返回响应内容，支持超时重试"""
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
@@ -80,15 +106,42 @@ class TestDataGenerator:
             "max_tokens": self.max_tokens
         }
 
-        try:
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=90)
-            response.raise_for_status()
-            result = response.json()
-            return result["choices"][0]["message"]["content"]
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"API 请求失败: {str(e)}")
-        except (KeyError, IndexError) as e:
-            raise Exception(f"响应格式异常: {str(e)}")
+        max_retries = 3
+        retry_delay = 2  # 秒
+        timeout_seconds = 90
+
+        for attempt in range(max_retries):
+            try:
+                print(f"[DEBUG] 正在调用 DeepSeek API，第 {attempt+1} 次尝试...")
+                response = requests.post(
+                    self.api_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=timeout_seconds
+                )
+                print(f"[DEBUG] 状态码: {response.status_code}")
+                if response.status_code != 200:
+                    print(f"[DEBUG] 错误响应内容: {response.text[:300]}")
+                response.raise_for_status()
+                result = response.json()
+                content = result["choices"][0]["message"]["content"]
+                print(f"[DEBUG] 返回内容长度: {len(content)}")
+                return content
+
+            except requests.exceptions.Timeout:
+                print(f"[WARN] 请求超时 (第 {attempt+1} 次)")
+                if attempt < max_retries - 1:
+                    print(f"[INFO] 等待 {retry_delay} 秒后重试...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    raise Exception(f"API 请求超时，已重试 {max_retries} 次，请稍后再试")
+
+            except requests.exceptions.RequestException as e:
+                raise Exception(f"API 请求失败: {str(e)}")
+
+            except (KeyError, IndexError) as e:
+                raise Exception(f"响应格式异常: {str(e)}")
 
     def generate(self, api_schema: Dict, count: int = 10,
                  scenarios: List[str] = None) -> List[Dict]:
@@ -106,13 +159,15 @@ class TestDataGenerator:
         prompt = self._build_prompt(api_schema, count, scenarios)
         content = self._call_deepseek_api(prompt)
 
-        # 提取JSON部分
-        json_match = re.search(r'\{[\s\S]*\}', content)
-        if json_match:
-            result = json.loads(json_match.group())
+        # 打印前500字符便于调试
+        print(f"[DEBUG] API 返回原始内容（前500字符）: {content[:500]}")
+
+        try:
+            result = self._extract_json(content)
             return result.get("test_data", [])
-        else:
-            raise ValueError("无法解析返回的JSON")
+        except Exception as e:
+            # 抛出更详细的错误，包含原始内容片段
+            raise Exception(f"JSON解析失败: {str(e)}。原始返回内容: {content[:300]}")
 
     def generate_for_swagger(self, swagger_url: str, count: int = 10) -> Dict[str, List]:
         """
@@ -133,7 +188,6 @@ class TestDataGenerator:
         for path, methods in swagger.get("paths", {}).items():
             for method, details in methods.items():
                 if method.lower() in ["get", "post", "put", "delete", "patch"]:
-                    # 提取接口 schema
                     schema = {
                         "path": path,
                         "method": method.upper(),

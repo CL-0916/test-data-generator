@@ -1,14 +1,13 @@
 import click
 import json
+import traceback
 from pathlib import Path
 from generator import TestDataGenerator
-
 
 @click.group()
 def cli():
     """AI测试数据生成工具 - 基于 DeepSeek"""
     pass
-
 
 @cli.command()
 @click.option('--schema', '-s', required=True,
@@ -74,7 +73,8 @@ def generate(schema, count, output, format, api_key, model, temperature, scenari
 
     except Exception as e:
         click.echo(f"❌ 生成失败: {str(e)}")
-
+        if click.confirm("是否显示详细错误信息？", default=False):
+            click.echo(traceback.format_exc())
 
 @cli.command()
 @click.option('--swagger-url', '-u', required=True,
@@ -110,7 +110,8 @@ def batch(swagger_url, output_dir, api_key, model):
 
     except Exception as e:
         click.echo(f"❌ 处理失败: {str(e)}")
-
+        if click.confirm("是否显示详细错误信息？", default=False):
+            click.echo(traceback.format_exc())
 
 if __name__ == '__main__':
     cli()
